@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[project]
+name = "nemo-tavily-plugin"
+version = "0.1.0"
+description = "Tavily web search and extraction for NeMo Helix agents."
+requires-python = ">=3.11,<3.15"
+dependencies = ["nemo-helix-plugin", "nemo-helix", "httpx>=0.27.0,<1", "pydantic>=2.0.0"]
+
+# Mounts the MCP proxy at /apis/tavily/v2/workspaces/{workspace}/mcp.
+[project.entry-points."nemo.services"]
+tavily = "nemo_tavily_plugin.service:TavilyService"
+
+# `nemo tavily setup|enable|disable|status`.
+[project.entry-points."nemo.cli"]
+tavily = "nemo_tavily_plugin.cli:TavilyCLI"
+
+[project.entry-points."nemo.skills"]
+tavily = "nemo_tavily_plugin.skills:get_skills_path"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nemo_tavily_plugin"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+pythonpath = ["src"]
