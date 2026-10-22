@@ -4,10 +4,10 @@
 """Configuration for the Tavily plugin.
 
 Every field has a default, so the plugin works without operator configuration.
-Override with environment variables or the Helm ``platformConfig.tavily`` key::
+Override with environment variables or the ``tavily`` key of the platform config::
 
     NEMO_TAVILY_MCP_URL=https://mcp.tavily.com/mcp
-    NEMO_TAVILY_SECRET_NAME=tavily-api-key
+    NEMO_TAVILY_ALLOWED_TOOLS='["tavily_search"]'
 """
 
 from __future__ import annotations
@@ -17,8 +17,9 @@ from typing import ClassVar
 from nemo_helix_plugin.config import NemoConfig
 from pydantic import Field
 
-DEFAULT_SECRET_NAME = "tavily-api-key"
-DEFAULT_ALLOWED_TOOLS = ["tavily_search", "tavily_extract"]
+# Workspace secret that holds the Tavily API key. Fixed so `nemo tavily setup` and
+# the proxy always agree on it.
+SECRET_NAME = "tavily-api-key"
 
 
 class TavilyConfig(NemoConfig):
@@ -31,20 +32,12 @@ class TavilyConfig(NemoConfig):
         default="https://mcp.tavily.com/mcp",
         description="Upstream Tavily MCP endpoint the proxy forwards to.",
     )
-    secret_name: str = Field(
-        default=DEFAULT_SECRET_NAME,
-        description="Name of the workspace secret that holds the Tavily API key.",
-    )
-    client_name: str = Field(
-        default="nemo-helix",
-        description="Sent upstream as X-Client-Name so Tavily attributes the traffic to NeMo Helix.",
-    )
     allowed_tools: list[str] = Field(
-        default_factory=lambda: list(DEFAULT_ALLOWED_TOOLS),
+        default_factory=lambda: ["tavily_search", "tavily_extract"],
         description="Tavily MCP tools agents can list and call. Every other tool is hidden and refused.",
     )
     timeout_seconds: float = Field(
         default=300.0,
         gt=0,
-        description="Read timeout for upstream MCP requests, including idle time on SSE streams.",
+        description="Read timeout for upstream MCP requests, including idle time on SSE responses.",
     )

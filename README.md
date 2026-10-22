@@ -19,7 +19,7 @@ The proxy forwards MCP traffic unchanged apart from those three things. Tool sch
 
 | Surface | Entry point | What it provides |
 |---|---|---|
-| Service | `nemo.services` → `tavily` | MCP proxy at `/apis/tavily/v2/workspaces/{workspace}/mcp` (`POST`, `GET`, `DELETE`) |
+| Service | `nemo.services` → `tavily` | MCP proxy at `POST /apis/tavily/v2/workspaces/{workspace}/mcp` |
 | CLI | `nemo.cli` → `tavily` | `nemo tavily setup`, `enable`, `disable`, `status` |
 | Skill | `nemo.skills` → `tavily` | `nemo-tavily-web-search`, for coding assistants and the Studio Assistant |
 
@@ -34,13 +34,13 @@ nemo services restart
 ## Use
 
 ```bash
-nemo tavily setup --workspace <ws>                 # store the Tavily API key (prompts; or --api-key)
-nemo tavily enable <agent> --workspace <ws> --yes  # add web search, rebuild and redeploy the agent
-nemo tavily status --workspace <ws>                # key configured? which agents have web search?
+nemo tavily setup --workspace <ws>                 # store the key as workspace secret `tavily-api-key` (prompts)
+nemo tavily enable <agent> --workspace <ws> --yes  # add Tavily MCP, rebuild and redeploy the agent
+nemo tavily status --workspace <ws>                # key configured? which agents have Tavily MCP?
 nemo tavily disable <agent> --workspace <ws> --yes
 ```
 
-`enable` adds this to the agent's config, then rebuilds the agent the same way `nemo agents redeploy` does:
+`enable` adds this to the agent's config stored in Helix (not your local `agent.yaml`), then rebuilds the agent the same way `nemo agents redeploy` does:
 
 ```yaml
 mcp:
@@ -55,12 +55,10 @@ mcp:
 | Setting | Env var | Default |
 |---|---|---|
 | Upstream MCP URL | `NEMO_TAVILY_MCP_URL` | `https://mcp.tavily.com/mcp` |
-| Secret holding the key | `NEMO_TAVILY_SECRET_NAME` | `tavily-api-key` |
-| Attribution sent as `X-Client-Name` | `NEMO_TAVILY_CLIENT_NAME` | `nemo-helix` |
 | Tools agents can use | `NEMO_TAVILY_ALLOWED_TOOLS` | `["tavily_search","tavily_extract"]` |
 | Upstream read timeout (s) | `NEMO_TAVILY_TIMEOUT_SECONDS` | `300` |
 
-Set these in the platform's environment, or under the `tavily` key in the platform config file. The CLI always uses the default secret name, so changing `NEMO_TAVILY_SECRET_NAME` also means creating that secret yourself.
+Set these in the platform's environment, or under the `tavily` key in the platform config file.
 
 ## Limits
 

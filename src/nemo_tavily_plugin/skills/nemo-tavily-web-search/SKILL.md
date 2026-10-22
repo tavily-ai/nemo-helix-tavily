@@ -66,5 +66,5 @@ Enabling web search adds the tools but does not change the agent's instructions.
 |---|---|---|
 | `No Tavily API key in workspace` | The workspace secret is missing | `nemo tavily setup --workspace <ws>` |
 | Agent errors with HTTP 412 from `/apis/tavily/...` | The key was deleted after enabling | Run `nemo tavily setup` again |
-| `Tavily web search can be toggled only on nemo-agents-spec-v1 agents` | NAT workflow agent | Use `nemo-agent-toolkit-tavily` |
+| `... only nemo-agents-spec-v1 agents are supported` | NAT workflow agent | Use `nemo-agent-toolkit-tavily` |
 | `... runs in docker mode, which cannot reach ...` | Container deployment | Re-run `enable` with `--mcp-url` |

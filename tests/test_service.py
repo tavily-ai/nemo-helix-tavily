@@ -95,18 +95,14 @@ class TestRoutes:
         assert response.status_code == 200
         assert response.json()["error"]["code"] == -32602
 
-    def test_session_delete_is_forwarded(self) -> None:
-        seen: list[httpx.Request] = []
-
+    def test_get_and_delete_are_405_without_reaching_tavily(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
-            seen.append(request)
-            return httpx.Response(200)
+            raise AssertionError("upstream must not be called")
 
-        response = TestClient(_make_app(handler)).delete(MCP, headers={"Mcp-Session-Id": "s-1"})
+        client = TestClient(_make_app(handler))
 
-        assert response.status_code == 200
-        assert seen[0].method == "DELETE"
-        assert seen[0].headers["mcp-session-id"] == "s-1"
+        assert client.get(MCP).status_code == 405
+        assert client.delete(MCP).status_code == 405
 
     def test_upstream_failure_is_502(self) -> None:
         def handler(request: httpx.Request) -> httpx.Response:
@@ -118,20 +114,15 @@ class TestRoutes:
 
 
 class TestAuthz:
-    def test_every_route_admits_agents_and_requires_invoke_permission(self) -> None:
-        routes = [
-            route
-            for spec in TavilyService().get_routers()
-            for route in spec.router.routes
-            if isinstance(route, APIRoute)
-        ]
+    def test_route_admits_agents_and_requires_invoke_permission(self) -> None:
+        (route,) = [route for spec in TavilyService().get_routers() for route in spec.router.routes]
+        assert isinstance(route, APIRoute)
 
-        assert {method for route in routes for method in route.methods or ()} == {"GET", "POST", "DELETE"}
-        for route in routes:
-            (rule,) = get_path_rules(route.endpoint)
-            assert set(rule.callers) == {CallerKind.PRINCIPAL, CallerKind.SERVICE_PRINCIPAL}
-            assert [permission.id for permission in rule.permissions] == ["tavily.mcp.invoke"]
-            assert get_path_scope(route.endpoint)
+        (rule,) = get_path_rules(route.endpoint)
+        assert route.methods == {"POST"}
+        assert set(rule.callers) == {CallerKind.PRINCIPAL, CallerKind.SERVICE_PRINCIPAL}
+        assert [permission.id for permission in rule.permissions] == ["tavily.mcp.invoke"]
+        assert get_path_scope(route.endpoint)
 
 
 def _secrets_client(handler: Callable[[httpx.Request], httpx.Response]) -> AsyncNemoClient:
@@ -148,7 +139,7 @@ class TestApiKeyResolution:
             seen.append(request)
             return httpx.Response(200, json={"name": "tavily-api-key", "workspace": "team-a", "value": "tvly-abc"})
 
-        key = await tavily_api_key("team-a", client=_secrets_client(handler), config=TavilyConfig())
+        key = await tavily_api_key("team-a", client=_secrets_client(handler))
 
         assert key == "tvly-abc"
         assert seen[0].url.path == "/apis/secrets/v2/workspaces/team-a/secrets/tavily-api-key/access"
@@ -158,7 +149,7 @@ class TestApiKeyResolution:
             return httpx.Response(404, json={"detail": "not found"})
 
         with pytest.raises(HTTPException) as raised:
-            await tavily_api_key("team-a", client=_secrets_client(handler), config=TavilyConfig())
+            await tavily_api_key("team-a", client=_secrets_client(handler))
 
         assert raised.value.status_code == 412
         assert "nemo tavily setup --workspace team-a" in raised.value.detail
@@ -168,6 +159,6 @@ class TestApiKeyResolution:
             return httpx.Response(403, json={"detail": "forbidden"})
 
         with pytest.raises(HTTPException) as raised:
-            await tavily_api_key("team-a", client=_secrets_client(handler), config=TavilyConfig())
+            await tavily_api_key("team-a", client=_secrets_client(handler))
 
         assert raised.value.status_code == 403

@@ -8,12 +8,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from unittest.mock import MagicMock
 
-import pytest
-from nemo_helix_plugin.agents.types import Agent, AgentDeployment, DeploymentStatus
+from nemo_helix_plugin.agents.types import AgentDeployment, DeploymentStatus
 from nemo_tavily_plugin.agents import (
-    UnsupportedAgentError,
     proxy_url,
-    require_spec_agent,
     tavily_enabled,
     wait_for_deployment,
     with_tavily,
@@ -66,13 +63,6 @@ def test_without_tavily_removes_only_tavily() -> None:
 
 def test_without_tavily_tolerates_configs_without_mcp() -> None:
     assert without_tavily({"name": "a"}) == {"name": "a"}
-
-
-def test_nat_agents_are_rejected() -> None:
-    agent = Agent(name="nat-agent", config_format="nat-workflow-v1", config={"workflow": {}})
-
-    with pytest.raises(UnsupportedAgentError, match="nemo-agent-toolkit-tavily"):
-        require_spec_agent(agent)
 
 
 def test_wait_returns_when_running() -> None:

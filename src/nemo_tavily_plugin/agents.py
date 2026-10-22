@@ -1,14 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Turning Tavily web search on and off for a registered agent.
+"""Turning the Tavily MCP server on and off for a registered agent.
 
-Web search is one MCP server entry, ``mcp.servers.tavily``, pointing at this
-plugin's workspace proxy. Agents cannot be updated in place, so a toggle
-rebuilds the agent the same way ``nemo agents redeploy`` does: undeploy, delete,
-register with the new config, then deploy again with the previous runtime
-settings. The agent's Ethos fileset survives the delete, and the stored config
-wins over any ``agent.yaml`` in it at deploy time.
+Tavily is one MCP server entry, ``mcp.servers.tavily``, pointing at this plugin's
+workspace proxy. Agents cannot be updated in place, so a toggle rebuilds the
+agent the same way ``nemo agents redeploy`` does: undeploy, delete, register with
+the new config, then deploy again with the previous runtime settings. The
+agent's Ethos fileset survives the delete, and the stored config wins over any
+``agent.yaml`` in it at deploy time.
 """
 
 from __future__ import annotations
@@ -28,10 +28,6 @@ SPEC_CONFIG_FORMAT = "nemo-agents-spec-v1"
 LIVE_DEPLOYMENT_STATUSES = frozenset({"pending", "starting", "running"})
 
 
-class UnsupportedAgentError(ValueError):
-    """The agent's config format cannot carry an MCP server."""
-
-
 def proxy_path(workspace: str) -> str:
     return f"/apis/tavily/v2/workspaces/{workspace}/mcp"
 
@@ -41,8 +37,10 @@ def proxy_url(base_url: str, workspace: str) -> str:
     return f"{base_url.rstrip('/')}{proxy_path(workspace)}"
 
 
-def tavily_server(url: str) -> dict[str, Any]:
-    return {"transport": "streamable-http", "url": url}
+def tavily_server_url(config: dict[str, Any]) -> str | None:
+    """Return the URL of the agent's ``tavily`` MCP server, if it has one."""
+    servers = (config.get("mcp") or {}).get("servers") or {}
+    return (servers.get(SERVER_NAME) or {}).get("url")
 
 
 def tavily_enabled(config: dict[str, Any], workspace: str) -> bool:
@@ -52,40 +50,32 @@ def tavily_enabled(config: dict[str, Any], workspace: str) -> bool:
     for the same platform) count. A ``tavily`` server pointing anywhere else, such as
     Tavily's hosted MCP directly, does not.
     """
-    servers = (config.get("mcp") or {}).get("servers") or {}
-    url = (servers.get(SERVER_NAME) or {}).get("url") or ""
-    return urlsplit(url).path.rstrip("/") == proxy_path(workspace)
+    return urlsplit(tavily_server_url(config) or "").path.rstrip("/") == proxy_path(workspace)
 
 
 def with_tavily(config: dict[str, Any], url: str) -> dict[str, Any]:
     """Return a copy of *config* with the Tavily MCP server attached at *url*."""
     updated = copy.deepcopy(config)
-    mcp = updated.get("mcp") or {}
-    servers = dict(mcp.get("servers") or {})
-    servers[SERVER_NAME] = tavily_server(url)
-    updated["mcp"] = {**mcp, "servers": servers}
+    mcp = updated["mcp"] = updated.get("mcp") or {}
+    mcp["servers"] = {**(mcp.get("servers") or {}), SERVER_NAME: {"transport": "streamable-http", "url": url}}
     return updated
 
 
 def without_tavily(config: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of *config* with the Tavily MCP server removed."""
     updated = copy.deepcopy(config)
-    mcp = updated.get("mcp")
-    if isinstance(mcp, dict) and isinstance(mcp.get("servers"), dict):
-        mcp["servers"].pop(SERVER_NAME, None)
+    servers = (updated.get("mcp") or {}).get("servers")
+    if isinstance(servers, dict):
+        servers.pop(SERVER_NAME, None)
     return updated
 
 
-def require_spec_agent(agent: Agent) -> None:
-    if agent.config_format != SPEC_CONFIG_FORMAT:
-        raise UnsupportedAgentError(
-            f"Agent {agent.name!r} uses {agent.config_format!r}. Tavily web search can be toggled only on "
-            f"{SPEC_CONFIG_FORMAT} agents; NAT workflows can use the nemo-agent-toolkit-tavily package instead."
-        )
-
-
-def agent_deployments(client: AgentsClient, *, workspace: str, agent: str) -> list[AgentDeployment]:
-    return [dep for dep in client.list_deployments(workspace=workspace).items() if dep.agent == agent]
+def live_deployments(client: AgentsClient, *, workspace: str, agent: str) -> list[AgentDeployment]:
+    return [
+        dep
+        for dep in client.list_deployments(workspace=workspace).items()
+        if dep.agent == agent and dep.status in LIVE_DEPLOYMENT_STATUSES
+    ]
 
 
 def rebuild_agent(
@@ -100,11 +90,7 @@ def rebuild_agent(
 
     Returns the new deployment, or ``None`` when the agent had no live deployment.
     """
-    live = [
-        dep
-        for dep in agent_deployments(client, workspace=workspace, agent=agent.name)
-        if dep.status in LIVE_DEPLOYMENT_STATUSES
-    ]
+    live = live_deployments(client, workspace=workspace, agent=agent.name)
     if len({dep.deployment_mode for dep in live}) > 1:
         raise ValueError(
             f"Agent {agent.name!r} has live deployments in different modes; undeploy all but one and try again."
@@ -113,7 +99,6 @@ def rebuild_agent(
     for dep in live:
         client.delete_deployment(workspace=workspace, name=dep.name).data()
         echo(f"Undeployed {dep.name}.")
-
     try:
         client.delete_agent(workspace=workspace, name=agent.name).data()
     except NotFoundError:
@@ -121,10 +106,7 @@ def rebuild_agent(
     client.register_agent(
         workspace=workspace,
         body=RegisterAgentRequest(
-            name=agent.name,
-            description=agent.description,
-            config=config,
-            config_format=agent.config_format,
+            name=agent.name, description=agent.description, config=config, config_format=agent.config_format
         ),
     ).data()
     echo(f"Re-registered agent {agent.name}.")
