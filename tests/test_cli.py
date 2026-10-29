@@ -15,8 +15,9 @@ import pytest
 import typer
 from click.testing import Result
 from nemo_helix_plugin.client.client import NemoClient
-from nemo_tavily_plugin.cli import TavilyCLI
 from typer.testing import CliRunner
+
+from nemo_tavily_plugin.cli import TavilyCLI
 
 BASE_URL = "http://nhx.test"
 WORKSPACE = "team-a"

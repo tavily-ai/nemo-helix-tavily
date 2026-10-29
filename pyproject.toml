@@ -5,8 +5,16 @@
 name = "nemo-tavily-plugin"
 version = "0.1.0"
 description = "Tavily web search and extraction for NeMo Helix agents."
-requires-python = ">=3.11,<3.15"
-dependencies = ["nemo-helix-plugin", "nemo-helix", "httpx>=0.27.0,<1", "pydantic>=2.0.0"]
+readme = "README.md"
+authors = [{ name = "Tavily by Nebius", email = "tavily-integrations@nebius.com" }]
+# NeMo Helix and its plugin SDK require Python 3.12+.
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    "nemo-helix>=0.9",
+    "nemo-helix-plugin>=0.9",
+    "httpx>=0.27.0,<1",
+    "pydantic>=2.0.0",
+]
 
 # Mounts the MCP proxy at /apis/tavily/v2/workspaces/{workspace}/mcp.
 [project.entry-points."nemo.services"]
@@ -19,6 +27,13 @@ tavily = "nemo_tavily_plugin.cli:TavilyCLI"
 [project.entry-points."nemo.skills"]
 tavily = "nemo_tavily_plugin.skills:get_skills_path"
 
+[dependency-groups]
+test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+lint = ["ruff>=0.6", "ty"]
+
+[tool.uv]
+default-groups = ["test", "lint"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -26,7 +41,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/nemo_tavily_plugin"]
 
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "scripts", "README.md", "pyproject.toml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+
+# Matches NeMo Helix's ruff settings, so code moves between the two repos unchanged.
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W291", "W292", "W293", "I001", "I002"]

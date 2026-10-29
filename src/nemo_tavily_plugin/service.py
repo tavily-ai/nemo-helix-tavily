@@ -33,10 +33,11 @@ from nemo_helix_plugin.config import get_platform_config
 from nemo_helix_plugin.dependencies import get_nemo_client
 from nemo_helix_plugin.secrets.client import AsyncSecretsClient
 from nemo_helix_plugin.service import NemoService, RouterSpec
+from pydantic import BaseModel
+
 from nemo_tavily_plugin.authz import TavilyMcpPerms, scope
 from nemo_tavily_plugin.config import ENABLE_HINT, SECRET_NAME, TavilyConfig
 from nemo_tavily_plugin.proxy import forward, is_tools_list, parse_message, proxy_url, refusal, upstream_headers
-from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 

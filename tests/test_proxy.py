@@ -9,6 +9,8 @@ import json
 
 import httpx
 import pytest
+from starlette.responses import Response, StreamingResponse
+
 from nemo_tavily_plugin.proxy import (
     INVALID_REQUEST,
     UNKNOWN_TOOL,
@@ -20,7 +22,6 @@ from nemo_tavily_plugin.proxy import (
     refusal,
     upstream_headers,
 )
-from starlette.responses import Response, StreamingResponse
 
 ALLOWED = ["tavily_search", "tavily_extract"]
 TOOLS = [

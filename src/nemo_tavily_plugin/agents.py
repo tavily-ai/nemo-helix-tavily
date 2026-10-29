@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 from nemo_helix_plugin.agents.client import AgentsClient
 from nemo_helix_plugin.agents.types import Agent, AgentDeployment, CreateDeploymentRequest, RegisterAgentRequest
 from nemo_helix_plugin.client.errors import NotFoundError
+
 from nemo_tavily_plugin.proxy import proxy_path
 
 SERVER_NAME = "tavily"

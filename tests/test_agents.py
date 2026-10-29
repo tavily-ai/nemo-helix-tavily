@@ -10,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from nemo_helix_plugin.agents.types import AgentDeployment, DeploymentStatus
+
 from nemo_tavily_plugin.agents import (
     mcp_url_for_mode,
     tavily_enabled,

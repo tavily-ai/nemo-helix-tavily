@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: uv sync --locked
+      - run: uv run --no-sync ruff check
+      - run: uv run --no-sync ruff format --check
+      - run: uv run --no-sync ty check
+      - run: uv run --no-sync pytest -q
+      - run: uv build
+      - name: Check the wheel has the skill and every entry point
+        run: |
+          unzip -l dist/*.whl | grep -q 'nemo_tavily_plugin/skills/nemo-tavily-web-search/SKILL.md'
+          entry_points=$(unzip -p dist/*.whl '*.dist-info/entry_points.txt')
+          for group in nemo.services nemo.cli nemo.skills; do
+            grep -qF "[$group]" <<<"$entry_points" || { echo "::error::wheel has no [$group] entry point"; exit 1; }
+          done
