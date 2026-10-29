@@ -21,7 +21,7 @@ The proxy forwards MCP traffic unchanged apart from those three things. Tool sch
 |---|---|---|
 | Service | `nemo.services` → `tavily` | MCP proxy at `POST /apis/tavily/v2/workspaces/{workspace}/mcp`, and `GET .../status` for the URL agents use |
 | CLI | `nemo.cli` → `tavily` | `nemo tavily setup`, `enable`, `disable`, `status`, `search`, `extract` |
-| Skill | `nemo.skills` → `tavily` | `nemo-tavily-web-search`, for coding assistants and the Studio Assistant |
+| Skill | `nemo.skills` → `tavily` | `nemo-tavily-web-search`, for coding assistants |
 
 ## Enable Tavily
 
@@ -145,9 +145,9 @@ Set these in the platform's environment, or under the `tavily` key in the platfo
 
 ## Limits
 
-- Only `nemo-agents-spec-v1` agents. NAT workflows can use the `nemo-agent-toolkit-tavily` package.
-- Subprocess, Docker and Kubernetes deployments get a reachable MCP URL automatically. Other modes, such as OpenShell, need `--mcp-url`.
-- With platform auth on, container agents must call the proxy through their auth-proxy sidecar; this is not handled yet.
+- Only `nemo-agents-spec-v1` agents.
+- Subprocess, Docker and Kubernetes deployments get a reachable MCP URL automatically. Other deployment modes need `--mcp-url`.
+- With platform auth on, container agents need their deployment to authenticate calls to the proxy; this is not handled yet.
 
 ## Development
 

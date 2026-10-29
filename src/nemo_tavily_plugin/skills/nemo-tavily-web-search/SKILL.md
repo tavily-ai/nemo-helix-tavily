@@ -43,7 +43,7 @@ The `nemo tavily` commands give an agent two tools, `tavily_search` and `tavily_
    nemo agents invoke -a <agent> -w <ws> -i "What is the latest stable Python release?"
    ```
 
-   The answer should cite web sources. Tool calls appear in the agent's traces in Studio.
+   The answer should cite web sources. Tool calls appear in the agent's traces.
 
 ## Search or extract from the CLI
 
@@ -68,8 +68,8 @@ Enabling web search adds the tools but does not change the agent's instructions.
 
 ## Limits
 
-- Only `nemo-agents-spec-v1` agents are supported. For NAT workflows, use the `nemo-agent-toolkit-tavily` package.
-- `enable` picks an MCP URL the agent can reach for subprocess, Docker and Kubernetes deployments. Other modes, such as OpenShell, need `--mcp-url`.
+- Only `nemo-agents-spec-v1` agents are supported.
+- `enable` picks an MCP URL the agent can reach for subprocess, Docker and Kubernetes deployments. Other deployment modes need `--mcp-url`.
 - Agents see only `tavily_search` and `tavily_extract`. Calls to other Tavily tools are refused.
 
 ## Troubleshooting
@@ -79,5 +79,5 @@ Enabling web search adds the tools but does not change the agent's instructions.
 | `The Tavily MCP proxy is not enabled on this platform ...` | The proxy is off (the default), or the plugin is not installed on the platform | Ask the operator to set `NEMO_TAVILY_ENABLED=true` (Helm: `platformConfig.tavily.enabled: true`) and restart |
 | `No Tavily API key in workspace` (HTTP 412 from `search`/`extract`) | The workspace secret is missing | `nemo tavily setup --workspace <ws>` |
 | Agent errors with HTTP 412 from `/apis/tavily/...` | The key was deleted after enabling | Run `nemo tavily setup` again |
-| `... only nemo-agents-spec-v1 agents are supported` | NAT workflow agent | Use `nemo-agent-toolkit-tavily` |
-| `... runs in openshell mode. Pass --mcp-url ...` | Deployment mode with no automatic URL | Re-run `enable` with `--mcp-url` |
+| `... only nemo-agents-spec-v1 agents are supported` | Agent uses another config format | Enable Tavily on a `nemo-agents-spec-v1` agent instead |
+| `... runs in <mode> mode. Pass --mcp-url ...` | Deployment mode with no automatic URL | Re-run `enable` with `--mcp-url` |

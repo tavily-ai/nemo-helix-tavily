@@ -52,8 +52,8 @@ def get_agent_base_url() -> str:
     """Return the platform URL deployed agents can reach.
 
     On Kubernetes that is the in-cluster API Service, which the Helm chart sets as
-    ``NHX_INTERNAL_BASE_URL``; the platform's own base URL is loopback in the API
-    pod. Elsewhere agents share the platform's network, so its base URL works.
+    ``NHX_INTERNAL_BASE_URL``. Elsewhere agents share the platform's network, so
+    its base URL works.
     """
     internal = os.environ.get("NEMO_INTERNAL_BASE_URL") or os.environ.get("NHX_INTERNAL_BASE_URL")
     return (internal or get_platform_config().base_url).rstrip("/")
@@ -119,8 +119,8 @@ def _build_mcp_router() -> APIRouter:
 
     @router.post("/mcp", response_model=None)
     @scope.write
-    # Agents call as themselves when auth is off, or as ``service:agents`` through
-    # a deployment's auth-proxy sidecar when it is on.
+    # Agents may call as principals or service principals, depending on the
+    # platform's auth setup.
     @path_rule(callers=[CallerKind.PRINCIPAL, CallerKind.SERVICE_PRINCIPAL], permissions=[TavilyMcpPerms.INVOKE])
     async def post_mcp(
         request: Request,

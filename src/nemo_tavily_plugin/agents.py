@@ -5,10 +5,7 @@
 
 Tavily is one MCP server entry, ``mcp.servers.tavily``, pointing at this plugin's
 workspace proxy. Agents cannot be updated in place, so a toggle rebuilds the
-agent the same way ``nemo agents redeploy`` does: undeploy, delete, register with
-the new config, then deploy again with the previous runtime settings. The
-agent's Ethos fileset survives the delete, and the stored config wins over any
-``agent.yaml`` in it at deploy time.
+agent with the new config and redeploys it with its previous runtime settings.
 """
 
 from __future__ import annotations

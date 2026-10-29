@@ -272,14 +272,14 @@ class TestEnable:
         assert "nemo tavily setup" in result.output
         assert all(method == "GET" for method, _ in platform.calls())
 
-    def test_rejects_nat_agents(self, app: typer.Typer, platform: _Platform) -> None:
+    def test_rejects_other_config_formats(self, app: typer.Typer, platform: _Platform) -> None:
         platform.secrets["tavily-api-key"] = "tvly-abc"
-        platform.agents["nat"] = {**_agent("nat"), "config_format": "nat-workflow-v1", "config": {"workflow": {}}}
+        platform.agents["flow"] = {**_agent("flow"), "config_format": "other-format-v1", "config": {"steps": []}}
 
-        result = _invoke(app, platform, "enable", "nat", "--yes")
+        result = _invoke(app, platform, "enable", "flow", "--yes")
 
         assert result.exit_code == 1
-        assert "nemo-agent-toolkit-tavily" in result.output
+        assert "only nemo-agents-spec-v1 agents are supported" in result.output
 
     @pytest.mark.parametrize(
         ("mode", "platform_url", "expected"),

@@ -190,8 +190,7 @@ class TavilyCLI(NemoCLI):
             current = agents.get_agent(workspace=workspace, name=agent).data()
             if current.config_format != SPEC_CONFIG_FORMAT:
                 raise _fail(
-                    f"{agent!r} is a {current.config_format} agent; only {SPEC_CONFIG_FORMAT} agents are supported. "
-                    "NAT workflows can use the nemo-agent-toolkit-tavily package instead."
+                    f"{agent!r} is a {current.config_format} agent; only {SPEC_CONFIG_FORMAT} agents are supported."
                 )
             # Even with --mcp-url, the proxy must be on for the agent's calls to work.
             platform_url = _proxy_mcp_url(ctx, workspace)

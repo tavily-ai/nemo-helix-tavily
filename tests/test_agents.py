@@ -36,7 +36,7 @@ def test_proxy_url_is_workspace_scoped() -> None:
         (URL, "docker", "http://host.docker.internal:8080/apis/tavily/v2/workspaces/team-a/mcp"),
         ("http://[::1]/x", "docker", "http://host.docker.internal/x"),
         ("http://helix.example:8080/x", "docker", "http://helix.example:8080/x"),
-        (URL, "openshell", None),
+        (URL, "other", None),
     ],
 )
 def test_mcp_url_for_mode(url: str, mode: str | None, expected: str | None) -> None:

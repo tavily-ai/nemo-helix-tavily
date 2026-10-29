@@ -2,7 +2,7 @@
 
 # On a vX.Y.Z tag: run CI, publish the wheel as a GitHub pre-release, install it from its
 # public URL into a fresh NeMo Helix, and mark the release as latest only if that works.
-# The wheel's URL is what NVIDIA's image build and users' Dockerfiles pin:
+# The wheel's URL is what users' Dockerfiles pin:
 #   https://github.com/<owner>/<repo>/releases/download/vX.Y.Z/nemo_tavily_plugin-X.Y.Z-py3-none-any.whl
 name: Release
 
@@ -76,7 +76,7 @@ jobs:
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
 
   verify:
-    # Install from the public release URL, as NVIDIA and users will, into a fresh NeMo Helix.
+    # Install from the public release URL, as users will, into a fresh NeMo Helix.
     needs: publish
     runs-on: ubuntu-latest
     env:
