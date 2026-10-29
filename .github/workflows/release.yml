@@ -14,8 +14,9 @@ permissions:
   contents: read
 
 env:
-  # A fresh NeMo Helix to verify the published wheel in. Keep it at the oldest supported release.
-  HELIX_IMAGE: nvcr.io/nvidia/nemo-helix/nhx-api:0.9.0
+  # A fresh NeMo Helix to verify the published wheel in. A nightly 0.9 build until NeMo Helix 0.9
+  # is released; then pin the oldest supported release.
+  HELIX_IMAGE: ghcr.io/nvidia-nemo/nemo-helix/nhx-api:rc-20261028230653
 
 jobs:
   ci:
@@ -83,15 +84,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - name: CLI on a laptop, with NeMo Helix from PyPI
-        run: |
-          uv venv --python 3.12
-          uv pip install "$WHEEL"
-          .venv/bin/nemo tavily --help
+      # --no-deps: Helix's images report their own packages as version 0.0.0, so resolving
+      # nemo-helix>=0.9 would try to replace them from PyPI. The image has every dependency.
       - name: Platform, inside the NeMo Helix API image
         run: |
           docker run --rm -e WHEEL -v "$PWD/scripts:/scripts:ro" --entrypoint sh "$HELIX_IMAGE" -c \
-            '/app/.venv/bin/pip install --no-cache-dir "$WHEEL" && /app/.venv/bin/python /scripts/smoke.py'
+            '/app/.venv/bin/pip install --no-cache-dir --no-deps "$WHEEL" && /app/.venv/bin/python /scripts/smoke.py'
+      # pip, not uv, so the URL's #sha256 fragment is verified.
+      - name: CLI on a laptop, with NeMo Helix from PyPI
+        run: |
+          uv venv --seed --python 3.12
+          if ! .venv/bin/pip install --dry-run --quiet "nemo-helix>=0.9" >/dev/null 2>&1; then
+            echo "::notice::nemo-helix>=0.9 is not on PyPI yet, so the CLI install check is skipped."
+            exit 0
+          fi
+          .venv/bin/pip install "$WHEEL"
+          .venv/bin/nemo tavily --help
 
   promote:
     needs: verify

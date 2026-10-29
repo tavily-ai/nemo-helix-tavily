@@ -11,23 +11,40 @@ on:
 permissions:
   contents: read
 
+env:
+  # The NeMo Helix API image the tests run in: the Python environment the plugin is installed into
+  # in production. A nightly 0.9 build until NeMo Helix 0.9 is released; then pin the release.
+  HELIX_IMAGE: ghcr.io/nvidia-nemo/nemo-helix/nhx-api:rc-20261028230653
+
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: ${{ matrix.python }}
-      - run: uv sync --locked
-      - run: uv run --no-sync ruff check
-      - run: uv run --no-sync ruff format --check
-      - run: uv run --no-sync ty check
-      - run: uv run --no-sync pytest -q
+      - run: uvx ruff check
+      - run: uvx ruff format --check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Helix's images report their own packages as version 0.0.0, so a plain pip install would
+      # try to replace them from PyPI to satisfy nemo-helix>=0.9. The image already has every
+      # runtime dependency, so install the plugin without its dependencies.
+      - run: |
+          docker run --rm -v "$PWD:/repo" -w /repo -e PYTHONDONTWRITEBYTECODE=1 --entrypoint sh "$HELIX_IMAGE" -c '
+            set -e
+            /app/.venv/bin/pip install --no-cache-dir --no-deps .
+            /app/.venv/bin/pip install --no-cache-dir pytest pytest-asyncio ty
+            /app/.venv/bin/ty check --python /app/.venv
+            /app/.venv/bin/python -m pytest -q -p no:cacheprovider'
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
       - run: uv build
       - name: Check the wheel has the skill and every entry point
         run: |

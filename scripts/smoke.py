@@ -6,8 +6,11 @@ Run it with the Python of the platform's environment after installing the plugin
 wheel there, for example inside an ``nhx-api`` image, the way NVIDIA's image build
 would install it::
 
-    pip install nemo_tavily_plugin-<version>-py3-none-any.whl
+    pip install --no-deps nemo_tavily_plugin-<version>-py3-none-any.whl
     python scripts/smoke.py
+
+``--no-deps`` because Helix images report their own packages as version 0.0.0, so
+pip would otherwise try to replace them from PyPI.
 
 It checks, in order:
 
