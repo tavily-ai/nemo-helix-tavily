@@ -3,8 +3,7 @@
 """Check that the installed plugin loads and runs on a NeMo Helix platform.
 
 Run it with the Python of the platform's environment after installing the plugin
-wheel there, for example inside an ``nhx-api`` image, the way NVIDIA's image build
-would install it::
+wheel there, for example inside an ``nhx-api`` image::
 
     pip install --no-deps nemo_tavily_plugin-<version>-py3-none-any.whl
     python scripts/smoke.py
