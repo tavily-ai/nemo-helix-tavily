@@ -44,6 +44,17 @@ The `nemo tavily` commands give an agent two tools, `tavily_search` and `tavily_
 
    The answer should cite web sources. Tool calls appear in the agent's traces in Studio.
 
+## Search or extract from the CLI
+
+The same tools can be called directly, without an agent, using the workspace's key. Use these to check the key works, or to look something up:
+
+```bash
+nemo tavily search "<query>" --workspace <ws> [-n 5] [--depth advanced] [--topic news]
+nemo tavily extract <url> [<url> ...] --workspace <ws> [--query "<focus>"] [--depth advanced]
+```
+
+`search` prints a table of results; `extract` prints each page as markdown. Add `-f json` for Tavily's full response.
+
 ## Turn web search off
 
 ```bash
@@ -64,7 +75,7 @@ Enabling web search adds the tools but does not change the agent's instructions.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No Tavily API key in workspace` | The workspace secret is missing | `nemo tavily setup --workspace <ws>` |
+| `No Tavily API key in workspace` (HTTP 412 from `search`/`extract`) | The workspace secret is missing | `nemo tavily setup --workspace <ws>` |
 | Agent errors with HTTP 412 from `/apis/tavily/...` | The key was deleted after enabling | Run `nemo tavily setup` again |
 | `... only nemo-agents-spec-v1 agents are supported` | NAT workflow agent | Use `nemo-agent-toolkit-tavily` |
 | `... runs in docker mode, which cannot reach ...` | Container deployment | Re-run `enable` with `--mcp-url` |

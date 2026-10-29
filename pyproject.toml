@@ -12,7 +12,7 @@ dependencies = ["nemo-helix-plugin", "nemo-helix", "httpx>=0.27.0,<1", "pydantic
 [project.entry-points."nemo.services"]
 tavily = "nemo_tavily_plugin.service:TavilyService"
 
-# `nemo tavily setup|enable|disable|status`.
+# `nemo tavily setup|enable|disable|status|search|extract`.
 [project.entry-points."nemo.cli"]
 tavily = "nemo_tavily_plugin.cli:TavilyCLI"
 

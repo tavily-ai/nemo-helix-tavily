@@ -20,7 +20,7 @@ The proxy forwards MCP traffic unchanged apart from those three things. Tool sch
 | Surface | Entry point | What it provides |
 |---|---|---|
 | Service | `nemo.services` → `tavily` | MCP proxy at `POST /apis/tavily/v2/workspaces/{workspace}/mcp` |
-| CLI | `nemo.cli` → `tavily` | `nemo tavily setup`, `enable`, `disable`, `status` |
+| CLI | `nemo.cli` → `tavily` | `nemo tavily setup`, `enable`, `disable`, `status`, `search`, `extract` |
 | Skill | `nemo.skills` → `tavily` | `nemo-tavily-web-search`, for coding assistants and the Studio Assistant |
 
 ## Install
@@ -38,7 +38,12 @@ nemo tavily setup --workspace <ws>                 # store the key as workspace 
 nemo tavily enable <agent> --workspace <ws> --yes  # add Tavily MCP, rebuild and redeploy the agent
 nemo tavily status --workspace <ws>                # key configured? which agents have Tavily MCP?
 nemo tavily disable <agent> --workspace <ws> --yes
+
+nemo tavily search "latest nemotron release" --workspace <ws> -n 5   # call the tools directly
+nemo tavily extract https://example.com --workspace <ws> -f json
 ```
+
+`search` and `extract` go through the same proxy as agents, so they use the workspace's key, the tool allowlist and the `X-Client-Name` attribution. They need no key on your machine.
 
 `enable` adds this to the agent's config stored in Helix (not your local `agent.yaml`), then rebuilds the agent the same way `nemo agents redeploy` does:
 

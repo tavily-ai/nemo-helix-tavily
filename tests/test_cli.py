@@ -43,15 +43,19 @@ def _page(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 @dataclass
 class _Platform:
-    """Just enough of the agents and secrets APIs for the CLI, recording each request."""
+    """Just enough of the agents, secrets and Tavily MCP APIs for the CLI, recording each request."""
 
     agents: dict[str, dict[str, Any]] = field(default_factory=dict)
     deployments: dict[str, dict[str, Any]] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
+    tool_results: dict[str, dict[str, Any]] = field(default_factory=dict)
+    tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     requests: list[httpx.Request] = field(default_factory=list)
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
+        if request.url.path == f"/apis/tavily/v2/workspaces/{WORKSPACE}/mcp":
+            return self._mcp(request)
         match = _ROUTE.match(request.url.path)
         assert match, f"unexpected path {request.url.path}"
         kind, name = match["kind"], match["name"]
@@ -87,6 +91,18 @@ class _Platform:
         return httpx.Response(
             201 if request.method == "POST" else 200, json={"name": name or body["name"], "workspace": WORKSPACE}
         )
+
+    def _mcp(self, request: httpx.Request) -> httpx.Response:
+        message = json.loads(request.content)
+        if message["method"] == "notifications/initialized":
+            return httpx.Response(202)
+        result: dict[str, Any] = {}
+        if message["method"] == "tools/call":
+            params = message["params"]
+            self.tool_calls.append((params["name"], params["arguments"]))
+            result = {"content": [], "structuredContent": self.tool_results[params["name"]]}
+        body = f"data: {json.dumps({'jsonrpc': '2.0', 'id': message['id'], 'result': result})}\n\n"
+        return httpx.Response(200, text=body, headers={"content-type": "text/event-stream", "mcp-session-id": "s1"})
 
     def calls(self) -> list[tuple[str, str]]:
         return [(r.method, r.url.path.rsplit("/v2/workspaces/team-a/", 1)[1]) for r in self.requests]
@@ -323,3 +339,59 @@ class TestStatus:
             "triage": "disabled",
             "direct": "disabled",
         }
+
+
+class TestSearch:
+    def test_prints_results_table(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.tool_results["tavily_search"] = {
+            "answer": None,
+            "results": [{"title": "NeMo", "url": "https://nvidia.com/nemo", "score": 0.9, "content": "..."}],
+        }
+
+        result = _invoke(app, platform, "search", "nemo helix", "-n", "3", output_format="table")
+
+        assert result.exit_code == 0, result.output
+        assert "https://nvidia.com/nemo" in result.output
+        assert platform.tool_calls == [("tavily_search", {"query": "nemo helix", "max_results": 3})]
+
+    def test_json_prints_the_full_result(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.tool_results["tavily_search"] = {"query": "q", "results": []}
+
+        result = _invoke(app, platform, "search", "q", "--depth", "advanced", "--topic", "news")
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == {"query": "q", "results": []}
+        assert platform.tool_calls[0][1] == {"query": "q", "search_depth": "advanced", "topic": "news"}
+
+    def test_unexpected_result_is_printed_as_json(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.tool_results["tavily_search"] = {"detail": "something new"}
+
+        result = _invoke(app, platform, "search", "q", output_format="table")
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.stdout) == {"detail": "something new"}
+
+
+class TestExtract:
+    def test_prints_page_content_and_failures(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.tool_results["tavily_extract"] = {
+            "results": [{"url": "https://a.test", "title": "A", "raw_content": "Hello from A"}],
+            "failed_results": [{"url": "https://b.test", "error": "Failed to fetch url"}],
+        }
+
+        result = _invoke(app, platform, "extract", "https://a.test", "https://b.test", output_format="table")
+
+        assert result.exit_code == 0, result.output
+        assert "Hello from A" in result.stdout
+        assert "Could not extract https://b.test: Failed to fetch url" in result.stderr
+        assert platform.tool_calls == [("tavily_extract", {"urls": ["https://a.test", "https://b.test"]})]
+
+    def test_fails_when_no_page_was_extracted(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.tool_results["tavily_extract"] = {
+            "results": [],
+            "failed_results": [{"url": "https://b.test", "error": "Failed to fetch url"}],
+        }
+
+        result = _invoke(app, platform, "extract", "https://b.test", output_format="table")
+
+        assert result.exit_code == 1
