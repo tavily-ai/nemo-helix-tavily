@@ -39,9 +39,12 @@ Requires NeMo Helix 0.9 or later. Earlier releases have a different agents API, 
 
 The proxy reads `enabled` at startup, so every change needs a platform restart.
 
-**Local platform.** In a source checkout the plugin is a uv workspace member, so `make bootstrap` (or `uv sync --all-packages`) installs it. Otherwise, install the `nemo-tavily-plugin` wheel into the environment that runs `nemo services`. Then restart with the proxy on:
+The plugin is published as a wheel on this repository's GitHub releases. Each release's notes give the wheel's URL with its SHA-256; examples below use `<wheel-url>` for it.
+
+**Local platform.** Install the wheel into the environment that runs `nemo services`, then restart with the proxy on:
 
 ```bash
+pip install "<wheel-url>"
 NEMO_TAVILY_ENABLED=true nemo services restart
 ```
 
@@ -51,9 +54,12 @@ The restarted platform takes the variable from your shell, so set it every time 
 
 ```dockerfile
 FROM <your nhx-api image>
-COPY nemo_tavily_plugin-<version>-py3-none-any.whl /tmp/
-RUN /app/.venv/bin/pip install --no-cache-dir /tmp/nemo_tavily_plugin-<version>-py3-none-any.whl
+RUN /app/.venv/bin/pip install --no-cache-dir --no-deps "<wheel-url>"
 ```
+
+Keep `--no-deps`. NeMo Helix images report their own packages as version `0.0.0`, so without it pip would try to replace them from PyPI to satisfy the plugin's `nemo-helix>=0.9` requirement. The image already has every dependency the plugin needs.
+
+If your image builds have no internet access, download the wheel once, then `COPY` it into the build and install it from the file instead.
 
 Then turn the proxy on in your Helm values and upgrade the release. Pass all of your existing values files as well; a value left out of `helm upgrade` goes back to its default.
 
@@ -143,8 +149,19 @@ Set these in the platform's environment, or under the `tavily` key in the platfo
 - Subprocess, Docker and Kubernetes deployments get a reachable MCP URL automatically. Other modes, such as OpenShell, need `--mcp-url`.
 - With platform auth on, container agents must call the proxy through their auth-proxy sidecar; this is not handled yet.
 
-## Tests
+## Development
 
 ```bash
-uv run --frozen pytest plugins/nemo-tavily/tests -v
+uv sync                      # plugin, NeMo Helix and the test and lint tools
+uv run pytest
+uv run ruff check && uv run ruff format --check && uv run ty check
+```
+
+Until NeMo Helix 0.9 is on PyPI, `uv sync` cannot resolve it. Run the tests and type check inside a nightly Helix image instead, as the `test` job in `.github/workflows/ci.yml` does.
+
+`scripts/smoke.py` checks that an installed build loads and runs on a NeMo Helix platform: entry-point discovery, no routes while disabled, clean authz, and a live platform that serves the proxy only when enabled. It never contacts Tavily. Run it with the Python of a Helix environment the plugin is installed in, for example inside an `nhx-api` image:
+
+```bash
+pip install --no-deps dist/nemo_tavily_plugin-*.whl
+python scripts/smoke.py
 ```

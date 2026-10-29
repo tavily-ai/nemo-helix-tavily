@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 from nemo_helix_plugin.client.client import NemoClient
+
 from nemo_tavily_plugin.tool_call import ToolCallError, call_tool
 
 BASE_URL = "http://nhx.test"

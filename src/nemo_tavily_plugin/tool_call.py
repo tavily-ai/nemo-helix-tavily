@@ -22,6 +22,7 @@ import httpx
 from nemo_helix_plugin.client.client import NemoClient
 from nemo_helix_plugin.client.errors import NotFoundError
 from nemo_helix_plugin.client.types import PreparedRequest
+
 from nemo_tavily_plugin.proxy import parse_message
 
 PROTOCOL_VERSION = "2025-06-18"
