@@ -12,3 +12,4 @@ scope = AuthzScope("tavily")
 
 class TavilyMcpPerms(PermissionSet, namespace="tavily.mcp"):
     INVOKE = perm("Call Tavily web search tools through the workspace MCP proxy")
+    READ = perm("See the URL agents use to reach the workspace MCP proxy")

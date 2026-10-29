@@ -1,7 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Calling one Tavily tool through the workspace proxy, for ``nemo tavily search|extract``.
+"""The CLI's calls to the workspace proxy: its status, and one Tavily tool at a time.
+
+``proxy_mcp_url`` asks the platform whether the proxy is enabled and which URL
+deployed agents reach it at. ``call_tool`` backs ``nemo tavily search|extract``.
 
 The CLI goes through the platform's proxy rather than to Tavily directly, so it
 never needs the API key and gets the same tool allowlist and attribution as
@@ -17,6 +20,7 @@ from typing import Any
 
 import httpx
 from nemo_helix_plugin.client.client import NemoClient
+from nemo_helix_plugin.client.errors import NotFoundError
 from nemo_helix_plugin.client.types import PreparedRequest
 from nemo_tavily_plugin.proxy import parse_message
 
@@ -24,10 +28,32 @@ PROTOCOL_VERSION = "2025-06-18"
 CLIENT_INFO = {"name": "nemo-cli", "version": "1"}
 
 _PATH_TEMPLATE = "/apis/tavily/v2/workspaces/{workspace}/mcp"
+_STATUS_PATH_TEMPLATE = "/apis/tavily/v2/workspaces/{workspace}/status"
 
 
 class ToolCallError(Exception):
     """Tavily, or the proxy, rejected the tool call."""
+
+
+def proxy_mcp_url(client: NemoClient, *, workspace: str) -> str | None:
+    """Return the MCP URL deployed agents should use for *workspace*, or ``None`` when the proxy is off.
+
+    The platform mounts no Tavily routes unless the proxy is enabled, so a 404 here
+    means it is disabled, or the plugin is not installed on the platform.
+    """
+    request: PreparedRequest[None] = PreparedRequest(
+        path_template=_STATUS_PATH_TEMPLATE,
+        path_params={"workspace": workspace},
+        method="GET",
+        content=None,
+        content_type=None,
+        response_type=None,
+    )
+    try:
+        response = client.send(request).http_response
+    except NotFoundError:
+        return None
+    return response.json()["mcp_url"]
 
 
 def call_tool(client: NemoClient, *, workspace: str, name: str, arguments: dict[str, Any]) -> Any:

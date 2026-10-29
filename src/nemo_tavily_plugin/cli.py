@@ -14,7 +14,7 @@ from nemo_helix_plugin.cli import NemoCLI, create_typer_app
 from nemo_helix_plugin.cli_error_handling import handle_errors
 from nemo_helix_plugin.cli_options import ListOutputFormatOption, WorkspaceOption
 from nemo_helix_plugin.cli_output import Column, format_output
-from nemo_helix_plugin.cli_state import cli_state, resolve_base_url, resolve_cli_workspace, resolve_output_format
+from nemo_helix_plugin.cli_state import cli_state, resolve_cli_workspace, resolve_output_format
 from nemo_helix_plugin.cli_warnings import collect_warnings
 from nemo_helix_plugin.client.client import NemoClient
 from nemo_helix_plugin.client.errors import NotFoundError
@@ -24,7 +24,7 @@ from nemo_tavily_plugin.agents import (
     SERVER_NAME,
     SPEC_CONFIG_FORMAT,
     live_deployments,
-    proxy_url,
+    mcp_url_for_mode,
     rebuild_agent,
     tavily_enabled,
     tavily_server_url,
@@ -32,8 +32,8 @@ from nemo_tavily_plugin.agents import (
     with_tavily,
     without_tavily,
 )
-from nemo_tavily_plugin.config import SECRET_NAME
-from nemo_tavily_plugin.tool_call import ToolCallError, call_tool
+from nemo_tavily_plugin.config import ENABLE_HINT, SECRET_NAME
+from nemo_tavily_plugin.tool_call import ToolCallError, call_tool, proxy_mcp_url
 
 AgentArgument = typer.Argument(..., help="Name of the agent.")
 YesOption = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt.")
@@ -41,6 +41,9 @@ WaitOption = typer.Option(True, "--wait/--no-wait", help="Wait for the redeploye
 TimeoutOption = typer.Option(300, "--timeout", "-t", help="Seconds to wait for the redeployed agent.")
 
 _STATUS_COLUMNS = [Column("name"), Column("config_format"), Column("tavily_mcp")]
+_PROXY_OFF = (
+    f"The Tavily MCP proxy is not enabled on this platform, or the plugin is not installed there. {ENABLE_HINT}"
+)
 _SEARCH_COLUMNS = [Column("title"), Column("url"), Column("score")]
 # Tavily searches and extractions can take longer than the CLI's default timeout.
 _TOOL_TIMEOUT_SECONDS = 300.0
@@ -57,6 +60,10 @@ def _secret_exists(secrets: SecretsClient, workspace: str) -> bool:
 def _fail(message: str) -> typer.Exit:
     typer.echo(f"Error: {message}", err=True)
     return typer.Exit(code=1)
+
+
+def _proxy_mcp_url(ctx: typer.Context, workspace: str) -> str | None:
+    return proxy_mcp_url(cli_state(ctx).typed_client(NemoClient), workspace=workspace)
 
 
 def _rebuild(
@@ -96,6 +103,8 @@ def _call(ctx: typer.Context, workspace: str, name: str, arguments: dict[str, An
     arguments = {key: value for key, value in arguments.items() if value is not None}
     try:
         return call_tool(client, workspace=workspace, name=name, arguments=arguments)
+    except NotFoundError as exc:
+        raise _fail(_PROXY_OFF) from exc
     except ToolCallError as exc:
         raise _fail(str(exc)) from exc
 
@@ -149,6 +158,9 @@ class TavilyCLI(NemoCLI):
                 body = HelixSecretCreateRequest(name=SECRET_NAME, value=key, description="Tavily API key")
                 secrets.create_secret(workspace=workspace, body=body).data()
                 typer.echo(f"Created secret {SECRET_NAME!r} in workspace {workspace!r}.")
+            if _proxy_mcp_url(ctx, workspace) is None:
+                typer.echo(f"Warning: {_PROXY_OFF}", err=True)
+                return
             typer.echo(f"Next: nemo tavily enable <agent> --workspace {workspace}")
 
         @app.command()
@@ -161,8 +173,8 @@ class TavilyCLI(NemoCLI):
                 None,
                 "--mcp-url",
                 help=(
-                    "MCP URL the agent should use. Defaults to this platform's Tavily proxy, "
-                    "which suits subprocess deployments; container deployments need a URL they can reach."
+                    "MCP URL the agent should use. Defaults to the URL the platform reports for its Tavily proxy, "
+                    "adjusted for the agent's deployment mode."
                 ),
             ),
             yes: bool = YesOption,
@@ -173,7 +185,6 @@ class TavilyCLI(NemoCLI):
             """Enable Tavily MCP (web search, web extract) on an agent. Rebuilds and redeploys the agent."""
             workspace = resolve_cli_workspace(ctx, workspace)
             state = cli_state(ctx)
-            url = mcp_url or proxy_url(resolve_base_url(), workspace)
             agents = state.typed_client(AgentsClient)
             current = agents.get_agent(workspace=workspace, name=agent).data()
             if current.config_format != SPEC_CONFIG_FORMAT:
@@ -181,6 +192,17 @@ class TavilyCLI(NemoCLI):
                     f"{agent!r} is a {current.config_format} agent; only {SPEC_CONFIG_FORMAT} agents are supported. "
                     "NAT workflows can use the nemo-agent-toolkit-tavily package instead."
                 )
+            # Even with --mcp-url, the proxy must be on for the agent's calls to work.
+            platform_url = _proxy_mcp_url(ctx, workspace)
+            if platform_url is None:
+                raise _fail(_PROXY_OFF)
+            url = mcp_url
+            if url is None:
+                modes = {dep.deployment_mode for dep in live_deployments(agents, workspace=workspace, agent=agent)}
+                mode = next(iter(modes)) if len(modes) == 1 else None
+                url = mcp_url_for_mode(platform_url, mode)
+                if url is None:
+                    raise _fail(f"{agent!r} runs in {mode} mode. Pass --mcp-url with an address it can reach.")
 
             existing_url = tavily_server_url(current.config)
             if existing_url == url:
@@ -188,17 +210,6 @@ class TavilyCLI(NemoCLI):
                 return
             if not _secret_exists(state.typed_client(SecretsClient), workspace):
                 raise _fail(f"No Tavily API key in workspace {workspace!r}. Run `nemo tavily setup` first.")
-            if mcp_url is None:
-                container_modes = {
-                    dep.deployment_mode
-                    for dep in live_deployments(agents, workspace=workspace, agent=agent)
-                    if dep.deployment_mode != "subprocess"
-                }
-                if container_modes:
-                    raise _fail(
-                        f"{agent!r} runs in {', '.join(sorted(container_modes))} mode, which cannot reach {url}. "
-                        "Pass --mcp-url with an address the container can reach."
-                    )
             if existing_url and not tavily_enabled(current.config, workspace):
                 typer.echo(f"Replacing {agent!r}'s existing {SERVER_NAME!r} MCP server ({existing_url}).")
 
@@ -258,10 +269,11 @@ class TavilyCLI(NemoCLI):
             workspace: WorkspaceOption = None,
             output_format: ListOutputFormatOption = None,
         ) -> None:
-            """Show whether the workspace has a Tavily key and which agents have Tavily MCP enabled."""
+            """Show whether the proxy is enabled, the workspace has a Tavily key, and which agents use Tavily MCP."""
             workspace = resolve_cli_workspace(ctx, workspace)
             state = cli_state(ctx)
             output_format = resolve_output_format(ctx, output_format)
+            agent_mcp_url = _proxy_mcp_url(ctx, workspace)
             key_configured = _secret_exists(state.typed_client(SecretsClient), workspace)
             rows = [
                 {
@@ -272,9 +284,19 @@ class TavilyCLI(NemoCLI):
                 for agent in state.typed_client(AgentsClient).list_agents(workspace=workspace).items()
             ]
             if output_format in ("json", "yaml"):
-                summary = {"workspace": workspace, "api_key_configured": key_configured, "agents": rows}
+                summary = {
+                    "workspace": workspace,
+                    "proxy_enabled": agent_mcp_url is not None,
+                    "agent_mcp_url": agent_mcp_url,
+                    "enable_hint": None if agent_mcp_url else ENABLE_HINT,
+                    "api_key_configured": key_configured,
+                    "agents": rows,
+                }
                 format_output(summary, output_format=output_format)
                 return
+            typer.echo(f"Tavily proxy: {f'enabled, agents use {agent_mcp_url}' if agent_mcp_url else 'disabled'}")
+            if agent_mcp_url is None:
+                typer.echo(f"  {ENABLE_HINT}")
             typer.echo(f"Tavily API key: {'configured' if key_configured else 'missing (run `nemo tavily setup`)'}")
             format_output(rows, is_list=True, output_format=output_format, output_columns=_STATUS_COLUMNS)
 

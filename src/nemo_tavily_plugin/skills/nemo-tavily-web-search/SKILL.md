@@ -19,6 +19,7 @@ The `nemo tavily` commands give an agent two tools, `tavily_search` and `tavily_
 1. Confirm the platform is up: `nemo workspaces list`.
 2. Confirm the plugin is installed: `nemo tavily --help`. If the command is missing, the `nemo-tavily-plugin` package is not installed in the platform's environment; tell the user rather than working around it.
 3. Pick the workspace. Every command takes `--workspace`; otherwise it uses the active context's workspace.
+4. Confirm the proxy is enabled: `nemo tavily status --workspace <ws>` should print `Tavily proxy: enabled`. It is off by default. Turning it on is a platform operator's change: set `NEMO_TAVILY_ENABLED=true` in the platform's environment (Helm: `platformConfig.tavily.enabled: true`) and restart the platform. Ask the user before restarting anything; do not do it on your own.
 
 ## Turn web search on
 
@@ -36,7 +37,7 @@ The `nemo tavily` commands give an agent two tools, `tavily_search` and `tavily_
    nemo tavily enable <agent> --workspace <ws> --yes
    ```
 
-3. Verify. `nemo tavily status --workspace <ws>` should show the key as configured and the agent as `enabled`. Then ask the agent something that needs current information:
+3. Verify. `nemo tavily status --workspace <ws>` should show the proxy as enabled, the key as configured and the agent as `enabled`. Then ask the agent something that needs current information:
 
    ```bash
    nemo agents invoke -a <agent> -w <ws> -i "What is the latest stable Python release?"
@@ -68,14 +69,15 @@ Enabling web search adds the tools but does not change the agent's instructions.
 ## Limits
 
 - Only `nemo-agents-spec-v1` agents are supported. For NAT workflows, use the `nemo-agent-toolkit-tavily` package.
-- The default MCP URL is the platform's own address, which works for subprocess deployments. For docker or Kubernetes deployments, pass `--mcp-url` with an address the agent container can reach.
+- `enable` picks an MCP URL the agent can reach for subprocess, Docker and Kubernetes deployments. Other modes, such as OpenShell, need `--mcp-url`.
 - Agents see only `tavily_search` and `tavily_extract`. Calls to other Tavily tools are refused.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
+| `The Tavily MCP proxy is not enabled on this platform ...` | The proxy is off (the default), or the plugin is not installed on the platform | Ask the operator to set `NEMO_TAVILY_ENABLED=true` (Helm: `platformConfig.tavily.enabled: true`) and restart |
 | `No Tavily API key in workspace` (HTTP 412 from `search`/`extract`) | The workspace secret is missing | `nemo tavily setup --workspace <ws>` |
 | Agent errors with HTTP 412 from `/apis/tavily/...` | The key was deleted after enabling | Run `nemo tavily setup` again |
 | `... only nemo-agents-spec-v1 agents are supported` | NAT workflow agent | Use `nemo-agent-toolkit-tavily` |
-| `... runs in docker mode, which cannot reach ...` | Container deployment | Re-run `enable` with `--mcp-url` |
+| `... runs in openshell mode. Pass --mcp-url ...` | Deployment mode with no automatic URL | Re-run `enable` with `--mcp-url` |

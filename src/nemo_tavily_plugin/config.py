@@ -3,10 +3,11 @@
 
 """Configuration for the Tavily plugin.
 
-Every field has a default, so the plugin works without operator configuration.
-Override with environment variables or the ``tavily`` key of the platform config::
+The proxy is off until an operator turns it on, so installing the plugin serves
+nothing by itself. Set fields with environment variables or the ``tavily`` key of
+the platform config (Helm: ``platformConfig.tavily``), then restart the platform::
 
-    NEMO_TAVILY_MCP_URL=https://mcp.tavily.com/mcp
+    NEMO_TAVILY_ENABLED=true
     NEMO_TAVILY_ALLOWED_TOOLS='["tavily_search"]'
 """
 
@@ -21,6 +22,9 @@ from pydantic import Field
 # the proxy always agree on it.
 SECRET_NAME = "tavily-api-key"
 
+# How an operator turns the proxy on, for the service log and CLI errors.
+ENABLE_HINT = "Set NEMO_TAVILY_ENABLED=true (Helm: platformConfig.tavily.enabled: true) and restart the platform."
+
 
 class TavilyConfig(NemoConfig):
     """Configuration for the Tavily MCP proxy."""
@@ -28,6 +32,10 @@ class TavilyConfig(NemoConfig):
     plugin_name: ClassVar[str] = "tavily"
     plugin_description: ClassVar[str] = "Configuration for the NeMo Helix Tavily plugin."
 
+    enabled: bool = Field(
+        default=False,
+        description="Serve the Tavily MCP proxy. When false the plugin mounts no routes; read at startup.",
+    )
     mcp_url: str = Field(
         default="https://mcp.tavily.com/mcp",
         description="Upstream Tavily MCP endpoint the proxy forwards to.",

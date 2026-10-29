@@ -50,12 +50,14 @@ class _Platform:
     secrets: dict[str, str] = field(default_factory=dict)
     tool_results: dict[str, dict[str, Any]] = field(default_factory=dict)
     tool_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    proxy_enabled: bool = True
+    agent_mcp_url: str = PROXY_URL
     requests: list[httpx.Request] = field(default_factory=list)
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        if request.url.path == f"/apis/tavily/v2/workspaces/{WORKSPACE}/mcp":
-            return self._mcp(request)
+        if request.url.path.startswith("/apis/tavily/"):
+            return self._tavily(request)
         match = _ROUTE.match(request.url.path)
         assert match, f"unexpected path {request.url.path}"
         kind, name = match["kind"], match["name"]
@@ -91,6 +93,15 @@ class _Platform:
         return httpx.Response(
             201 if request.method == "POST" else 200, json={"name": name or body["name"], "workspace": WORKSPACE}
         )
+
+    def _tavily(self, request: httpx.Request) -> httpx.Response:
+        """The proxy mounts no routes when disabled, so every path is a 404."""
+        if not self.proxy_enabled:
+            return httpx.Response(404, json={"detail": "Not Found"})
+        if request.url.path == f"/apis/tavily/v2/workspaces/{WORKSPACE}/status":
+            return httpx.Response(200, json={"workspace": WORKSPACE, "mcp_url": self.agent_mcp_url})
+        assert request.url.path == f"/apis/tavily/v2/workspaces/{WORKSPACE}/mcp"
+        return self._mcp(request)
 
     def _mcp(self, request: httpx.Request) -> httpx.Response:
         message = json.loads(request.content)
@@ -167,7 +178,8 @@ class TestSetup:
 
         assert result.exit_code == 0, result.output
         assert platform.secrets == {"tavily-api-key": "tvly-abc"}
-        assert platform.calls()[-1] == ("POST", "secrets")
+        assert ("POST", "secrets") in platform.calls()
+        assert "Next: nemo tavily enable" in result.output
 
     def test_updates_existing_secret(self, app: typer.Typer, platform: _Platform) -> None:
         platform.secrets["tavily-api-key"] = "tvly-old"
@@ -176,7 +188,7 @@ class TestSetup:
 
         assert result.exit_code == 0, result.output
         assert platform.secrets["tavily-api-key"] == "tvly-new"
-        assert platform.calls()[-1] == ("PATCH", "secrets/tavily-api-key")
+        assert ("PATCH", "secrets/tavily-api-key") in platform.calls()
 
     def test_prompts_and_ignores_environment(self, app: typer.Typer, platform: _Platform) -> None:
         result = _invoke(app, platform, "setup", env={"TAVILY_API_KEY": "tvly-env"}, input="tvly-typed\n")
@@ -189,6 +201,16 @@ class TestSetup:
 
         assert result.exit_code == 1
         assert platform.secrets == {}
+
+    def test_stores_key_and_explains_when_proxy_is_disabled(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.proxy_enabled = False
+
+        result = _invoke(app, platform, "setup", "--api-key", "tvly-abc")
+
+        assert result.exit_code == 0, result.output
+        assert platform.secrets == {"tavily-api-key": "tvly-abc"}
+        assert "NEMO_TAVILY_ENABLED=true" in result.stderr
+        assert "Next:" not in result.stdout
 
 
 class TestEnable:
@@ -258,24 +280,51 @@ class TestEnable:
         assert result.exit_code == 1
         assert "nemo-agent-toolkit-tavily" in result.output
 
-    def test_container_deployment_needs_explicit_url(self, app: typer.Typer, platform: _Platform) -> None:
+    @pytest.mark.parametrize(
+        ("mode", "platform_url", "expected"),
+        [
+            ("k8s", "http://nhx-api.nemo.svc:8080/x", "http://nhx-api.nemo.svc:8080/x"),
+            ("docker", "http://127.0.0.1:8080/x", "http://host.docker.internal:8080/x"),
+            ("subprocess", "http://127.0.0.1:8080/x", "http://127.0.0.1:8080/x"),
+        ],
+    )
+    def test_uses_the_platform_url_for_the_deployment_mode(
+        self, app: typer.Typer, platform: _Platform, mode: str, platform_url: str, expected: str
+    ) -> None:
+        platform.secrets["tavily-api-key"] = "tvly-abc"
+        platform.agent_mcp_url = platform_url
+        platform.agents["researcher"] = _agent()
+        platform.deployments["researcher-old"] = _deployment(mode=mode)
+
+        result = _invoke(app, platform, "enable", "researcher", "--yes")
+
+        assert result.exit_code == 0, result.output
+        assert platform.agents["researcher"]["config"]["mcp"]["servers"]["tavily"]["url"] == expected
+        assert platform.deployments["researcher-new"]["deployment_mode"] == mode
+
+    def test_other_modes_need_explicit_url(self, app: typer.Typer, platform: _Platform) -> None:
         platform.secrets["tavily-api-key"] = "tvly-abc"
         platform.agents["researcher"] = _agent()
-        platform.deployments["researcher-old"] = _deployment(mode="docker")
+        platform.deployments["researcher-old"] = _deployment(mode="openshell")
 
         refused = _invoke(app, platform, "enable", "researcher", "--yes")
-        allowed = _invoke(
-            app, platform, "enable", "researcher", "--yes", "--mcp-url", "http://host.docker.internal:8080/x"
-        )
+        allowed = _invoke(app, platform, "enable", "researcher", "--yes", "--mcp-url", "http://egress.test:8080/x")
 
         assert refused.exit_code == 1
         assert "--mcp-url" in refused.output
         assert allowed.exit_code == 0, allowed.output
-        assert (
-            platform.agents["researcher"]["config"]["mcp"]["servers"]["tavily"]["url"]
-            == "http://host.docker.internal:8080/x"
-        )
-        assert platform.deployments["researcher-new"]["deployment_mode"] == "docker"
+        assert platform.agents["researcher"]["config"]["mcp"]["servers"]["tavily"]["url"] == "http://egress.test:8080/x"
+
+    def test_refuses_when_proxy_is_disabled(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.secrets["tavily-api-key"] = "tvly-abc"
+        platform.proxy_enabled = False
+        platform.agents["researcher"] = _agent()
+
+        result = _invoke(app, platform, "enable", "researcher", "--yes", "--mcp-url", "http://elsewhere.test/x")
+
+        assert result.exit_code == 1
+        assert "NEMO_TAVILY_ENABLED=true" in result.output
+        assert all(method == "GET" for method, _ in platform.calls())
 
     def test_declining_the_prompt_changes_nothing(self, app: typer.Typer, platform: _Platform) -> None:
         platform.secrets["tavily-api-key"] = "tvly-abc"
@@ -333,12 +382,27 @@ class TestStatus:
 
         assert result.exit_code == 0, result.output
         printed = json.loads(result.stdout)
+        assert printed["proxy_enabled"] is True
+        assert printed["agent_mcp_url"] == PROXY_URL
+        assert printed["enable_hint"] is None
         assert printed["api_key_configured"] is True
         assert {row["name"]: row["tavily_mcp"] for row in printed["agents"]} == {
             "researcher": "enabled",
             "triage": "disabled",
             "direct": "disabled",
         }
+
+    def test_reports_disabled_proxy(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.proxy_enabled = False
+
+        as_json = _invoke(app, platform, "status")
+        as_table = _invoke(app, platform, "status", output_format="table")
+
+        assert json.loads(as_json.stdout)["proxy_enabled"] is False
+        assert json.loads(as_json.stdout)["agent_mcp_url"] is None
+        assert "NEMO_TAVILY_ENABLED=true" in json.loads(as_json.stdout)["enable_hint"]
+        assert "Tavily proxy: disabled" in as_table.stdout
+        assert "NEMO_TAVILY_ENABLED=true" in as_table.stdout
 
 
 class TestSearch:
@@ -370,6 +434,14 @@ class TestSearch:
 
         assert result.exit_code == 0, result.output
         assert json.loads(result.stdout) == {"detail": "something new"}
+
+    def test_explains_disabled_proxy(self, app: typer.Typer, platform: _Platform) -> None:
+        platform.proxy_enabled = False
+
+        result = _invoke(app, platform, "search", "q")
+
+        assert result.exit_code == 1
+        assert "NEMO_TAVILY_ENABLED=true" in result.output
 
 
 class TestExtract:

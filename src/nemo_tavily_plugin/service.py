@@ -6,6 +6,10 @@
 Serves a workspace-scoped MCP endpoint that agents attach as an MCP server::
 
     POST /apis/tavily/v2/workspaces/{workspace}/mcp
+    GET  /apis/tavily/v2/workspaces/{workspace}/status
+
+Nothing is mounted unless ``TavilyConfig.enabled`` is set, so an installed but
+unconfigured plugin serves no routes and never contacts Tavily.
 
 Each message is forwarded to Tavily's hosted MCP server with the workspace's
 Tavily API key, read from Helix Secrets. The key never reaches the agent. Only
@@ -16,6 +20,7 @@ teardown (DELETE), and FastAPI's 405 for those is what MCP clients expect.
 from __future__ import annotations
 
 import logging
+import os
 from typing import ClassVar
 
 import httpx
@@ -24,12 +29,14 @@ from fastapi.responses import Response
 from nemo_helix_plugin.authz import CallerKind, path_rule
 from nemo_helix_plugin.client.client import AsyncNemoClient
 from nemo_helix_plugin.client.errors import NotFoundError, PermissionDeniedError
+from nemo_helix_plugin.config import get_platform_config
 from nemo_helix_plugin.dependencies import get_nemo_client
 from nemo_helix_plugin.secrets.client import AsyncSecretsClient
 from nemo_helix_plugin.service import NemoService, RouterSpec
 from nemo_tavily_plugin.authz import TavilyMcpPerms, scope
-from nemo_tavily_plugin.config import SECRET_NAME, TavilyConfig
-from nemo_tavily_plugin.proxy import forward, is_tools_list, parse_message, refusal, upstream_headers
+from nemo_tavily_plugin.config import ENABLE_HINT, SECRET_NAME, TavilyConfig
+from nemo_tavily_plugin.proxy import forward, is_tools_list, parse_message, proxy_url, refusal, upstream_headers
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,22 @@ _upstream_client: httpx.AsyncClient | None = None
 
 def get_tavily_config() -> TavilyConfig:
     return TavilyConfig.get()
+
+
+def get_agent_base_url() -> str:
+    """Return the platform URL deployed agents can reach.
+
+    On Kubernetes that is the in-cluster API Service, which the Helm chart sets as
+    ``NHX_INTERNAL_BASE_URL``; the platform's own base URL is loopback in the API
+    pod. Elsewhere agents share the platform's network, so its base URL works.
+    """
+    internal = os.environ.get("NEMO_INTERNAL_BASE_URL") or os.environ.get("NHX_INTERNAL_BASE_URL")
+    return (internal or get_platform_config().base_url).rstrip("/")
+
+
+class TavilyStatus(BaseModel):
+    workspace: str
+    mcp_url: str
 
 
 def get_upstream_client(config: TavilyConfig = Depends(get_tavily_config)) -> httpx.AsyncClient:
@@ -68,6 +91,8 @@ class TavilyService(NemoService):
     dependencies: ClassVar[list[str]] = ["secrets"]
 
     def get_routers(self) -> list[RouterSpec]:
+        if not get_tavily_config().enabled:
+            return []
         return [
             RouterSpec(
                 _build_mcp_router(),
@@ -76,6 +101,10 @@ class TavilyService(NemoService):
                 prefix="/v2/workspaces/{workspace}",
             )
         ]
+
+    async def on_startup(self) -> None:
+        if not get_tavily_config().enabled:
+            logger.info("Tavily MCP proxy is installed but disabled. %s", ENABLE_HINT)
 
     async def on_shutdown(self) -> None:
         global _upstream_client
@@ -115,5 +144,12 @@ def _build_mcp_router() -> APIRouter:
         except httpx.HTTPError as exc:
             logger.warning("Tavily MCP request failed: %s", exc)
             raise HTTPException(status_code=502, detail="Could not reach the Tavily MCP server.") from exc
+
+    @router.get("/status")
+    @scope.read
+    @path_rule(callers=[CallerKind.PRINCIPAL, CallerKind.SERVICE_PRINCIPAL], permissions=[TavilyMcpPerms.READ])
+    async def get_status(workspace: str, base_url: str = Depends(get_agent_base_url)) -> TavilyStatus:
+        """Report that the proxy is enabled, and the MCP URL deployed agents should use for *workspace*."""
+        return TavilyStatus(workspace=workspace, mcp_url=proxy_url(base_url, workspace))
 
     return router

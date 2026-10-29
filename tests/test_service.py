@@ -6,7 +6,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -14,17 +15,31 @@ from fastapi import FastAPI, HTTPException
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from nemo_helix_plugin.authz import CallerKind, get_path_rules, get_path_scope
+from nemo_helix_plugin.authz_discovery import _derive_service_contribution
 from nemo_helix_plugin.client.client import AsyncNemoClient
+from nemo_helix_plugin.config import Configuration
+from nemo_tavily_plugin import service
 from nemo_tavily_plugin.config import TavilyConfig
 from nemo_tavily_plugin.service import (
     TavilyService,
+    get_agent_base_url,
     get_tavily_config,
     get_upstream_client,
     tavily_api_key,
 )
 
 MCP = "/v2/workspaces/team-a/mcp"
+STATUS = "/v2/workspaces/team-a/status"
 UPSTREAM = "https://mcp.example/mcp"
+IN_CLUSTER = "http://nhx-api.nemo.svc:8080"
+
+
+@pytest.fixture(autouse=True)
+def enabled() -> Iterator[None]:
+    """Turn the proxy on; tests of the disabled plugin override this again."""
+    Configuration.set_override(TavilyConfig(enabled=True))
+    yield
+    Configuration.clear_override(TavilyConfig)
 
 
 def _make_app(handler: Callable[[httpx.Request], httpx.Response]) -> FastAPI:
@@ -34,8 +49,13 @@ def _make_app(handler: Callable[[httpx.Request], httpx.Response]) -> FastAPI:
     upstream = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     app.dependency_overrides[tavily_api_key] = lambda: "tvly-workspace-key"
     app.dependency_overrides[get_upstream_client] = lambda: upstream
-    app.dependency_overrides[get_tavily_config] = lambda: TavilyConfig(mcp_url=UPSTREAM)
+    app.dependency_overrides[get_tavily_config] = lambda: TavilyConfig(enabled=True, mcp_url=UPSTREAM)
+    app.dependency_overrides[get_agent_base_url] = lambda: IN_CLUSTER
     return app
+
+
+def _never_called(request: httpx.Request) -> httpx.Response:
+    raise AssertionError("upstream must not be called")
 
 
 def _tools_list_response() -> httpx.Response:
@@ -83,10 +103,7 @@ class TestRoutes:
         assert response.json() == result
 
     def test_disallowed_tool_call_never_reaches_tavily(self) -> None:
-        def handler(request: httpx.Request) -> httpx.Response:
-            raise AssertionError("upstream must not be called")
-
-        client = TestClient(_make_app(handler))
+        client = TestClient(_make_app(_never_called))
         response = client.post(
             MCP,
             json={"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "tavily_crawl"}},
@@ -96,10 +113,7 @@ class TestRoutes:
         assert response.json()["error"]["code"] == -32602
 
     def test_get_and_delete_are_405_without_reaching_tavily(self) -> None:
-        def handler(request: httpx.Request) -> httpx.Response:
-            raise AssertionError("upstream must not be called")
-
-        client = TestClient(_make_app(handler))
+        client = TestClient(_make_app(_never_called))
 
         assert client.get(MCP).status_code == 405
         assert client.delete(MCP).status_code == 405
@@ -113,16 +127,97 @@ class TestRoutes:
         assert response.status_code == 502
 
 
+class TestEnabled:
+    @pytest.fixture
+    def loaded(self) -> Iterator[None]:
+        """Load TavilyConfig the way the platform does, not from the test override."""
+        Configuration.clear_override(TavilyConfig)
+        Configuration.clear_cache()
+        yield
+        Configuration.clear_cache()
+
+    @pytest.mark.usefixtures("loaded")
+    def test_disabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEMO_TAVILY_ENABLED", raising=False)
+
+        assert TavilyConfig.get().enabled is False
+
+    @pytest.mark.usefixtures("loaded")
+    def test_enabled_from_environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEMO_TAVILY_ENABLED", "true")
+
+        assert TavilyConfig.get().enabled is True
+
+    def test_disabled_plugin_mounts_nothing(self) -> None:
+        Configuration.set_override(TavilyConfig(enabled=False))
+
+        app = _make_app(_never_called)
+
+        assert TavilyService().get_routers() == []
+        assert TestClient(app).post(MCP, json={"jsonrpc": "2.0", "id": 1, "method": "ping"}).status_code == 404
+        assert TestClient(app).get(STATUS).status_code == 404
+
+
+class TestStatus:
+    def test_reports_the_agent_facing_mcp_url(self) -> None:
+        response = TestClient(_make_app(_never_called)).get(STATUS)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "workspace": "team-a",
+            "mcp_url": f"{IN_CLUSTER}/apis/tavily/v2/workspaces/team-a/mcp",
+        }
+
+    def test_agent_base_url_prefers_the_in_cluster_service(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEMO_INTERNAL_BASE_URL", raising=False)
+        monkeypatch.setenv("NHX_INTERNAL_BASE_URL", f"{IN_CLUSTER}/")
+        monkeypatch.setattr(service, "get_platform_config", lambda: SimpleNamespace(base_url="http://127.0.0.1:8080"))
+
+        assert get_agent_base_url() == IN_CLUSTER
+
+    def test_agent_base_url_falls_back_to_the_platform(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEMO_INTERNAL_BASE_URL", raising=False)
+        monkeypatch.delenv("NHX_INTERNAL_BASE_URL", raising=False)
+        monkeypatch.setattr(service, "get_platform_config", lambda: SimpleNamespace(base_url="http://127.0.0.1:8080"))
+
+        assert get_agent_base_url() == "http://127.0.0.1:8080"
+
+
 class TestAuthz:
-    def test_route_admits_agents_and_requires_invoke_permission(self) -> None:
-        (route,) = [route for spec in TavilyService().get_routers() for route in spec.router.routes]
-        assert isinstance(route, APIRoute)
+    def _routes(self) -> dict[str, APIRoute]:
+        routes = [route for spec in TavilyService().get_routers() for route in spec.router.routes]
+        assert all(isinstance(route, APIRoute) for route in routes)
+        return {route.path: route for route in routes if isinstance(route, APIRoute)}
+
+    def test_mcp_route_admits_agents_and_requires_invoke_permission(self) -> None:
+        route = self._routes()["/mcp"]
 
         (rule,) = get_path_rules(route.endpoint)
         assert route.methods == {"POST"}
         assert set(rule.callers) == {CallerKind.PRINCIPAL, CallerKind.SERVICE_PRINCIPAL}
         assert [permission.id for permission in rule.permissions] == ["tavily.mcp.invoke"]
         assert get_path_scope(route.endpoint)
+
+    def test_status_route_requires_read_permission(self) -> None:
+        route = self._routes()["/status"]
+
+        (rule,) = get_path_rules(route.endpoint)
+        assert route.methods == {"GET"}
+        assert [permission.id for permission in rule.permissions] == ["tavily.mcp.read"]
+        assert get_path_scope(route.endpoint)
+
+    def test_derivation_is_clean_whether_enabled_or_not(self) -> None:
+        contribution, problems, _ = _derive_service_contribution(TavilyService())
+        assert problems == []
+        assert set(contribution.endpoints) == {
+            "/apis/tavily/v2/workspaces/{workspace}/mcp",
+            "/apis/tavily/v2/workspaces/{workspace}/status",
+        }
+
+        Configuration.set_override(TavilyConfig(enabled=False))
+        contribution, problems, _ = _derive_service_contribution(TavilyService())
+        assert problems == []
+        assert contribution.endpoints == {}
 
 
 def _secrets_client(handler: Callable[[httpx.Request], httpx.Response]) -> AsyncNemoClient:

@@ -8,20 +8,38 @@ from __future__ import annotations
 from collections.abc import Iterator
 from unittest.mock import MagicMock
 
+import pytest
 from nemo_helix_plugin.agents.types import AgentDeployment, DeploymentStatus
 from nemo_tavily_plugin.agents import (
-    proxy_url,
+    mcp_url_for_mode,
     tavily_enabled,
     wait_for_deployment,
     with_tavily,
     without_tavily,
 )
+from nemo_tavily_plugin.proxy import proxy_url
 
 URL = "http://localhost:8080/apis/tavily/v2/workspaces/team-a/mcp"
 
 
 def test_proxy_url_is_workspace_scoped() -> None:
     assert proxy_url("http://localhost:8080/", "team-a") == URL
+
+
+@pytest.mark.parametrize(
+    ("url", "mode", "expected"),
+    [
+        (URL, None, URL),
+        (URL, "subprocess", URL),
+        ("http://nhx-api.nemo.svc:8080/x", "k8s", "http://nhx-api.nemo.svc:8080/x"),
+        (URL, "docker", "http://host.docker.internal:8080/apis/tavily/v2/workspaces/team-a/mcp"),
+        ("http://[::1]/x", "docker", "http://host.docker.internal/x"),
+        ("http://helix.example:8080/x", "docker", "http://helix.example:8080/x"),
+        (URL, "openshell", None),
+    ],
+)
+def test_mcp_url_for_mode(url: str, mode: str | None, expected: str | None) -> None:
+    assert mcp_url_for_mode(url, mode) == expected
 
 
 def test_with_tavily_adds_server_and_keeps_others() -> None:

@@ -22,19 +22,32 @@ from urllib.parse import urlsplit
 from nemo_helix_plugin.agents.client import AgentsClient
 from nemo_helix_plugin.agents.types import Agent, AgentDeployment, CreateDeploymentRequest, RegisterAgentRequest
 from nemo_helix_plugin.client.errors import NotFoundError
+from nemo_tavily_plugin.proxy import proxy_path
 
 SERVER_NAME = "tavily"
 SPEC_CONFIG_FORMAT = "nemo-agents-spec-v1"
 LIVE_DEPLOYMENT_STATUSES = frozenset({"pending", "starting", "running"})
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0"})
 
 
-def proxy_path(workspace: str) -> str:
-    return f"/apis/tavily/v2/workspaces/{workspace}/mcp"
+def mcp_url_for_mode(url: str, mode: str | None) -> str | None:
+    """Return the proxy *url* as an agent deployed in *mode* reaches it, or ``None`` if it cannot.
 
-
-def proxy_url(base_url: str, workspace: str) -> str:
-    """Return the workspace's Tavily MCP proxy URL on the platform at *base_url*."""
-    return f"{base_url.rstrip('/')}{proxy_path(workspace)}"
+    *url* is the platform's agent-facing proxy URL, which already names the
+    in-cluster API Service on Kubernetes. Subprocess and Kubernetes agents use it
+    as is, and so does an agent with no live deployment (*mode* ``None``). Docker
+    containers reach a loopback host through ``host.docker.internal``. Other modes
+    need an explicit URL.
+    """
+    if mode in (None, "subprocess", "k8s"):
+        return url
+    if mode != "docker":
+        return None
+    parts = urlsplit(url)
+    if (parts.hostname or "").lower() not in LOOPBACK_HOSTS:
+        return url
+    netloc = "host.docker.internal" if parts.port is None else f"host.docker.internal:{parts.port}"
+    return parts._replace(netloc=netloc).geturl()
 
 
 def tavily_server_url(config: dict[str, Any]) -> str | None:

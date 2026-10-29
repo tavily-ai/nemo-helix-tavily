@@ -37,6 +37,15 @@ INVALID_REQUEST = -32600
 UNKNOWN_TOOL = -32602
 
 
+def proxy_path(workspace: str) -> str:
+    return f"/apis/tavily/v2/workspaces/{workspace}/mcp"
+
+
+def proxy_url(base_url: str, workspace: str) -> str:
+    """Return the workspace's Tavily MCP proxy URL on the platform at *base_url*."""
+    return f"{base_url.rstrip('/')}{proxy_path(workspace)}"
+
+
 def upstream_headers(incoming: Mapping[str, str], *, api_key: str) -> dict[str, str]:
     """Build the headers sent to Tavily from the caller's request headers."""
     headers = {name: value for name, value in incoming.items() if name.lower() in FORWARDED_REQUEST_HEADERS}
