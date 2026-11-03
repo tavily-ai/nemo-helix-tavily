@@ -1,5 +1,5 @@
-<!-- SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved. -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- SPDX-FileCopyrightText: Copyright (c) 2026 Alpha AI Technologies Inc dba Tavily -->
+<!-- SPDX-License-Identifier: MIT -->
 
 # Tavily plugin
 
@@ -35,16 +35,16 @@ Installing the plugin serves nothing. The proxy stays off until a platform opera
 
 Requires NeMo Helix 0.9 or later. Earlier releases have a different agents API, and the plugin does not load on them.
 
+The plugin is published to PyPI as [`nemo-helix-tavily-plugin`](https://pypi.org/project/nemo-helix-tavily-plugin/). It depends only on NeMo Helix's plugin SDK (`nemo-helix-plugin`), not on `nemo-helix`, so it never installs or upgrades the platform. Install it into an environment that already has NeMo Helix. Each [GitHub release](https://github.com/tavily-ai/nemo-helix-tavily/releases) also attaches the wheel, with its SHA-256 and a build provenance attestation, if you prefer to pin by URL.
+
 ### 1. Turn on the proxy (platform operator)
 
 The proxy reads `enabled` at startup, so every change needs a platform restart.
 
-The plugin is published as a wheel on this repository's GitHub releases. Each release's notes give the wheel's URL with its SHA-256; examples below use `<wheel-url>` for it.
-
-**Local platform.** Install the wheel into the environment that runs `nemo services`, then restart with the proxy on:
+**Local platform.** Install the plugin into the environment that runs `nemo services`, then restart with the proxy on:
 
 ```bash
-pip install "<wheel-url>"
+pip install nemo-helix-tavily-plugin
 NEMO_TAVILY_ENABLED=true nemo services restart
 ```
 
@@ -54,12 +54,12 @@ The restarted platform takes the variable from your shell, so set it every time 
 
 ```dockerfile
 FROM <your nhx-api image>
-RUN /app/.venv/bin/pip install --no-cache-dir --no-deps "<wheel-url>"
+RUN /app/.venv/bin/pip install --no-cache-dir --no-deps "nemo-helix-tavily-plugin==<version>"
 ```
 
-Keep `--no-deps`. NeMo Helix images report their own packages as version `0.0.0`, so without it pip would try to replace them from PyPI to satisfy the plugin's `nemo-helix>=0.9` requirement. The image already has every dependency the plugin needs.
+Keep `--no-deps`. NeMo Helix images report their own packages as version `0.0.0`, so without it pip would try to replace them from PyPI to satisfy the plugin's `nemo-helix-plugin>=0.9` requirement. The image already has every dependency the plugin needs.
 
-If your image builds have no internet access, download the wheel once, then `COPY` it into the build and install it from the file instead.
+If your image builds have no internet access, download the wheel once (`pip download --no-deps nemo-helix-tavily-plugin==<version>`, or from the GitHub release), then `COPY` it into the build and install it from the file instead.
 
 Then turn the proxy on in your Helm values and upgrade the release. Pass all of your existing values files as well; a value left out of `helm upgrade` goes back to its default.
 
@@ -77,7 +77,7 @@ helm upgrade <release> <chart> -n <namespace> -f values.yaml -f values-tavily.ya
 
 ### 2. Store a Tavily API key (workspace user)
 
-The `nemo tavily` commands come from the same plugin, so install it wherever your `nemo` CLI runs too. Then store the key for the workspace. The command prompts for it, so the key stays out of shell history:
+The `nemo tavily` commands come from the same plugin, so install it wherever your `nemo` CLI runs too (`pip install nemo-helix-tavily-plugin` next to `nemo-helix`; the plugin does not bring the CLI with it). Then store the key for the workspace. The command prompts for it, so the key stays out of shell history:
 
 ```bash
 nemo tavily setup --workspace <ws>
@@ -152,16 +152,20 @@ Set these in the platform's environment, or under the `tavily` key in the platfo
 ## Development
 
 ```bash
-uv sync                      # plugin, NeMo Helix and the test and lint tools
+uv sync                      # plugin, NeMo Helix (the `helix` dev group) and the test and lint tools
 uv run pytest
 uv run ruff check && uv run ruff format --check && uv run ty check
 ```
 
-Until NeMo Helix 0.9 is on PyPI, `uv sync` cannot resolve it. Run the tests and type check inside a nightly Helix image instead, as the `test` job in `.github/workflows/ci.yml` does.
+NeMo Helix is a development dependency only (the `helix` group in `pyproject.toml`). Do not add `nemo-helix` to the plugin's runtime `dependencies`: that would stop NeMo Helix from shipping this plugin as one of its own dependencies, since the two would depend on each other. CI fails a wheel that requires it.
 
 `scripts/smoke.py` checks that an installed build loads and runs on a NeMo Helix platform: entry-point discovery, no routes while disabled, clean authz, and a live platform that serves the proxy only when enabled. It never contacts Tavily. Run it with the Python of a Helix environment the plugin is installed in, for example inside an `nhx-api` image:
 
 ```bash
-pip install --no-deps dist/nemo_tavily_plugin-*.whl
+pip install --no-deps dist/nemo_helix_tavily_plugin-*.whl
 python scripts/smoke.py
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

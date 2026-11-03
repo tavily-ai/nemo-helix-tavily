@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 Alpha AI Technologies Inc dba Tavily
+# SPDX-License-Identifier: MIT
 
 """The CLI's calls to the workspace proxy: its status, and one Tavily tool at a time.
 
