@@ -23,9 +23,7 @@ classifiers = [
 ]
 # NeMo Helix and its plugin SDK require Python 3.12+.
 requires-python = ">=3.12,<3.15"
-# The plugin builds only on the plugin SDK, not on nemo-helix itself, so NeMo Helix can ship it
-# as one of its own dependencies without a cycle. Install it next to nemo-helix, which provides
-# the platform and the `nemo` CLI it plugs into.
+# Not nemo-helix, so NeMo Helix can depend on this plugin without a cycle.
 dependencies = [
     "nemo-helix-plugin>=0.9",
     "httpx>=0.27.0,<1",
@@ -51,7 +49,6 @@ tavily = "nemo_tavily_plugin.skills:get_skills_path"
 
 [dependency-groups]
 # The platform and `nemo` CLI, for running the plugin locally and for scripts/smoke.py.
-# Not a runtime dependency: see the comment on `dependencies`.
 helix = ["nemo-helix>=0.9"]
 test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
 lint = ["ruff>=0.6", "ty"]

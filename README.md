@@ -157,7 +157,7 @@ uv run pytest
 uv run ruff check && uv run ruff format --check && uv run ty check
 ```
 
-NeMo Helix is a development dependency only (the `helix` group in `pyproject.toml`). Do not add `nemo-helix` to the plugin's runtime `dependencies`: that would stop NeMo Helix from shipping this plugin as one of its own dependencies, since the two would depend on each other. CI fails a wheel that requires it.
+Keep `nemo-helix` out of the runtime `dependencies`; it is only a dev dependency.
 
 `scripts/smoke.py` checks that an installed build loads and runs on a NeMo Helix platform: entry-point discovery, no routes while disabled, clean authz, and a live platform that serves the proxy only when enabled. It never contacts Tavily. Run it with the Python of a Helix environment the plugin is installed in, for example inside an `nhx-api` image:
 

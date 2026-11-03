@@ -53,9 +53,6 @@ jobs:
           for group in nemo.services nemo.cli nemo.skills; do
             grep -qF "[$group]" <<<"$entry_points" || { echo "::error::wheel has no [$group] entry point"; exit 1; }
           done
-      # So that NeMo Helix can ship this plugin as one of its dependencies, the plugin must not
-      # depend on nemo-helix (a cycle). The plugin SDK (nemo-helix-plugin) is the only NeMo
-      # package it may require.
       - name: Check the wheel's license and dependency metadata
         run: |
           metadata=$(unzip -p dist/*.whl '*.dist-info/METADATA')
