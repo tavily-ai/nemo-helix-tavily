@@ -1,5 +1,5 @@
-# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2026 Alpha AI Technologies Inc dba Tavily
+# SPDX-License-Identifier: MIT
 
 """``nemo tavily`` CLI tests against an in-memory stand-in for the agents and secrets APIs."""
 

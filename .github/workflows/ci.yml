@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 name: CI
 
@@ -30,8 +30,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Helix's images report their own packages as version 0.0.0, so a plain pip install would
-      # try to replace them from PyPI to satisfy nemo-helix>=0.9. The image already has every
-      # runtime dependency, so install the plugin without its dependencies.
+      # try to replace them from PyPI to satisfy nemo-helix-plugin>=0.9. The image already has
+      # every runtime dependency, so install the plugin without its dependencies.
       - run: |
           docker run --rm -v "$PWD:/repo" -w /repo -e PYTHONDONTWRITEBYTECODE=1 --entrypoint sh "$HELIX_IMAGE" -c '
             set -e
@@ -53,3 +53,12 @@ jobs:
           for group in nemo.services nemo.cli nemo.skills; do
             grep -qF "[$group]" <<<"$entry_points" || { echo "::error::wheel has no [$group] entry point"; exit 1; }
           done
+      - name: Check the wheel's license and dependency metadata
+        run: |
+          metadata=$(unzip -p dist/*.whl '*.dist-info/METADATA')
+          grep -qx 'License-Expression: MIT' <<<"$metadata" || { echo "::error::wheel has no MIT License-Expression"; exit 1; }
+          unzip -l dist/*.whl | grep -q '\.dist-info/licenses/LICENSE$' || { echo "::error::wheel has no LICENSE file"; exit 1; }
+          if grep -qiE '^Requires-Dist: nemo[-_.]helix([^-_.a-z]|$)' <<<"$metadata"; then
+            echo "::error::the plugin must not depend on nemo-helix; depend on nemo-helix-plugin instead"
+            exit 1
+          fi
