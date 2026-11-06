@@ -13,8 +13,8 @@ permissions:
 
 env:
   # The NeMo Helix API image the tests run in: the Python environment the plugin is installed into
-  # in production. A nightly 0.9 build until NeMo Helix 0.9 is released; then pin the release.
-  HELIX_IMAGE: ghcr.io/nvidia-nemo/nemo-helix/nhx-api:rc-20261028230653
+  # in production. The oldest supported NeMo Helix release.
+  HELIX_IMAGE: nvcr.io/nvidia/nemo-helix/nhx-api:0.9.0
 
 jobs:
   lint:
