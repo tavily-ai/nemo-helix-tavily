@@ -9,9 +9,8 @@ permissions:
   contents: read
 
 env:
-  # A fresh NeMo Helix to verify the published wheel in. A nightly 0.9 build until NeMo Helix 0.9
-  # is released; then pin the oldest supported release.
-  HELIX_IMAGE: ghcr.io/nvidia-nemo/nemo-helix/nhx-api:rc-20261028230653
+  # A fresh NeMo Helix to verify the published wheel in: the oldest supported release.
+  HELIX_IMAGE: nvcr.io/nvidia/nemo-helix/nhx-api:0.9.0
 
 jobs:
   ci:
